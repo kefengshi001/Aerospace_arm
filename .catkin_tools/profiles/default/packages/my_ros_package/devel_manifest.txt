@@ -1,0 +1,11 @@
+my_ros_package
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/cmake.lock /home/k/图片/Aerospace_arm/devel/./cmake.lock
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/share/my_ros_package/cmake/my_ros_packageConfig-version.cmake /home/k/图片/Aerospace_arm/devel/share/my_ros_package/cmake/my_ros_packageConfig-version.cmake
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/share/my_ros_package/cmake/my_ros_packageConfig.cmake /home/k/图片/Aerospace_arm/devel/share/my_ros_package/cmake/my_ros_packageConfig.cmake
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/lib/pkgconfig/my_ros_package.pc /home/k/图片/Aerospace_arm/devel/lib/pkgconfig/my_ros_package.pc
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/lib/my_ros_package/demo /home/k/图片/Aerospace_arm/devel/lib/my_ros_package/demo
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/lib/my_ros_package/pub_points_in_line /home/k/图片/Aerospace_arm/devel/lib/my_ros_package/pub_points_in_line
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/lib/my_ros_package/demo_test /home/k/图片/Aerospace_arm/devel/lib/my_ros_package/demo_test
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/lib/my_ros_package/ppt /home/k/图片/Aerospace_arm/devel/lib/my_ros_package/ppt
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/lib/my_ros_package/cube_pub /home/k/图片/Aerospace_arm/devel/lib/my_ros_package/cube_pub
+/home/k/图片/Aerospace_arm/devel/.private/my_ros_package/lib/my_ros_package/data_to_graph /home/k/图片/Aerospace_arm/devel/lib/my_ros_package/data_to_graph

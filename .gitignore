@@ -5,6 +5,7 @@ bin/
 lib/
 msg_gen/
 srv_gen/
+config/
 msg/*Action.msg
 msg/*ActionFeedback.msg
 msg/*ActionGoal.msg
@@ -24,6 +25,7 @@ devel_isolated/
 # Ignore generated docs
 *.dox
 *.wikidoc
+*.csv
 
 # eclipse stuff
 .project
@@ -49,3 +51,5 @@ qtcreator-*
 
 # Catkin custom files
 CATKIN_IGNORE
+
+
