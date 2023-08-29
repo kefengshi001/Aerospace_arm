@@ -1,0 +1,26 @@
+<launch>
+  <arg
+    name="model" />
+  <param
+    name="robot_description"
+    textfile="$(find modified-urdf)/urdf/modified-urdf-fixed.urdf" />
+
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="base_to_tcp_tf"
+    args="0 0 0 0 0 0 1 base_link tcp 10"/> -->
+
+  <node
+    name="joint_state_publisher_gui"
+    pkg="joint_state_publisher_gui"
+    type="joint_state_publisher_gui" />
+  <node
+    name="robot_state_publisher"
+    pkg="robot_state_publisher"
+    type="robot_state_publisher" />
+  <node
+    name="rviz"
+    pkg="rviz"
+    type="rviz"
+ />
+</launch>
+
+

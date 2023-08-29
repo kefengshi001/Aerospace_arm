@@ -137,7 +137,7 @@ namespace rocos
     }
 #pragma endregion
 
-#pragma region // 逆运动学求解器，限制住1、2、6关节求逆解
+#pragma region // 运动学求解器，限制住1、2、6关节求逆解
     KDL::Tree kdl_tree;
     KDL::Chain kdl_chain;
 
@@ -168,6 +168,33 @@ namespace rocos
         return ik_solver;
     }
 
+    KDL::ChainFkSolverPos_recursive Creat_FK_solver()
+    {
+
+        std::string fixed_urdf_file = "src/my_ros_package/config/modified-urdf-fixed.urdf";
+        if (!kdl_parser::treeFromFile(fixed_urdf_file, kdl_tree)) // 建立tree
+        {
+            // 加载URDF文件失败，处理错误
+            std::cout << "加载URDF文件失败" << std::endl;
+            exit(0);
+        }
+
+        // 提取机器人链信息
+        std::string base_link = "base_link"; // 设置基准链接
+        std::string end_link = "Link7";      // 设置终端链接
+
+        if (!kdl_tree.getChain(base_link, end_link, kdl_chain)) // 建立运动链
+        {
+            // 获取机器人链失败，处理错误
+            std::cout << "获取机器人链失败" << std::endl;
+            exit(0);
+        }
+
+        // 创建逆向运动学求解器
+        KDL::ChainFkSolverPos_recursive fk_solver(kdl_chain);
+        return fk_solver;
+    }
+
 #pragma endregion
 
 #pragma region // 离散空间中两点    pose_y_left.p:[   -0.644451,     3.55711, 1.84511e-05]      pose_y_right.p:[   -0.644451,     8.87911, 1.84511e-05]
@@ -175,13 +202,13 @@ namespace rocos
     struct Point3D // 创建一个存放位姿的结构体，后期方便离散和move_l的输入
     {
         const double x = -0.644451;
-        double y, z, Roll, Yaw;
-        const double Pitch = 0;
+        double y, z, Roll, Pitch, Yaw;
+        // const double Pitch = 0;
 
         Point3D() {} // 无参数构造函数
 
-        Point3D(double yVal, double zVal, double rollVal, double YawVal)
-            : y(yVal), z(zVal), Roll(rollVal), Yaw(YawVal)
+        Point3D(double yVal, double zVal, double rollVal, double pitchVal, double YawVal)
+            : y(yVal), z(zVal), Roll(rollVal), Pitch(pitchVal), Yaw(YawVal)
         {
             // 在构造函数的初始化列表中完成非常量成员的赋值
         }
@@ -228,7 +255,7 @@ namespace rocos
         start.y = Flange_pose.p[1];
         start.z = Flange_pose.p[2];
         double void_num; // 由于Pitch是const类型，不能修改其值，因此创建一个变量用于临时存放.GetRPY的值，void_num值无作用
-        Flange_pose.M.GetRPY(start.Roll, void_num, start.Yaw);
+        Flange_pose.M.GetRPY(start.Roll, start.Pitch, start.Yaw);
         // std::cout<<"start.Roll ="<<start.Roll<<"\t"<<"start.Pitch ="<<"\t"<<start.Pitch<<"\t"<<"start.Yaw = "<<start.Yaw<<"\n";
         // std::cout<<"start.Roll ="<<start.Roll<<"\t"<<"void_num = "<<void_num<<"\t"<<"start.Yaw = "<<start.Yaw<<"\n";
 
@@ -252,7 +279,7 @@ namespace rocos
         double stepY = (end.y - start.y) / numSteps;
         double stepZ = (end.z - start.z) / numSteps;
         double stepRoll = (end.Roll - start.Roll) / numSteps;
-        // double stepPitch = (end.Pitch - start.Pitch) / numSteps;
+        double stepPitch = (end.Pitch - start.Pitch) / numSteps;
         double stepYaw = (end.Yaw - start.Yaw) / numSteps;
 
         KDL::JntArray q_init(kdl_chain.getNrOfJoints()); // 四个元素
@@ -262,13 +289,13 @@ namespace rocos
         long int count = 1;
 
         //************************************************************************//
-        // std::ofstream csv_record("vel[2].csv");
+        std::ofstream csv_record("vel.csv");
 
-        //     if (!csv_record.is_open())
-        //     {
-        //         std::cout << "打开失败" << std::endl;
-        //         // flag_loop = false;
-        //     }
+            if (!csv_record.is_open())
+            {
+                std::cout << "打开失败" << std::endl;
+                // flag_loop = false;
+            }
 
         //**********************************************************************//
 
@@ -279,7 +306,7 @@ namespace rocos
             point.y = start.y + stepY * i;
             point.z = start.z + stepZ * i;
             point.Roll = start.Roll + stepRoll * i;
-            // point.Pitch = start.Pitch + stepPitch * i;
+            point.Pitch = start.Pitch + stepPitch * i;
             point.Yaw = start.Yaw + stepYaw * i;
 
             KDL::Frame mild_frame = Point3D2Frame(point); // 将Point3D转化为KDL::Frame
@@ -327,17 +354,17 @@ namespace rocos
             discrete_jointarray(5) = 0;
             discrete_jointarray(6) = solution(3);
             //*****************************************************************//
-            // csv_record <<  discrete_jointarray(2) << "\n"<<std::flush;
+            csv_record <<  discrete_jointarray(2) << "\t"<<discrete_jointarray(3) << "\t"<<discrete_jointarray(4) << "\t"<<discrete_jointarray(6) << "\t"<<"\n"<<std::flush;
             //*****************************************************************//
 
-            robot.servoJ(discrete_jointarray);
+            // robot.servoJ(discrete_jointarray);
             discretePoints.push_back(discrete_jointarray);
             q_init = solution;
             count++;
         }
 
         //*****************************************************************//
-        // csv_record.close();
+        csv_record.close();
         //*****************************************************************//
 
         return discretePoints;
@@ -374,25 +401,72 @@ namespace rocos
 #pragma region // 运动代码实现
     void run()
     {
-        KDL::JntArray q2(_joint_num);
+        auto fk_solver = Creat_FK_solver();
+        // KDL::JntArray q_init(_joint_num);
+        // KDL::JntArray q_reference(_joint_num);
+        // q_reference(0) = 0 * deg2rad;
+        // q_reference(1) = 0 * deg2rad;
+        // q_reference(2) = 45 * deg2rad;
+        // q_reference(3) = 90 * deg2rad;
+        // q_reference(4) = -45 * deg2rad;
+        // q_reference(5) = 0 * deg2rad;
+        // q_reference(6) = 0 * deg2rad;
+
+        // KDL::JntArray q_target_reference(4);
+        // q_target_reference(0) = q_reference(2);
+        // q_target_reference(1) = q_reference(3);
+        // q_target_reference(2) = q_reference(4);
+        // q_target_reference(3) = q_reference(6);
+
+        // KDL::Frame q_target_frame_reference;
+        // std::cout << "--------------------------------" << std::endl;
+        // // std::cout<<q_target_frame_reference.q.rows()<<"\t"<<q_target_frame_reference.qdot.rows()<<std::endl;
+        // int statu = fk_solver.JntToCart(q_target_reference, q_target_frame_reference); // 将q_reference转化成笛卡尔空间坐标
+        // std::cout << "正运动学解算statu：" << statu << std::endl;
+        // std::cout << "q_target_frame_reference.p: " << q_target_frame_reference.p << std::endl;
+        // KDL::JntArray q2(_joint_num);
+        // move_j(q2);
+
+        // move_j(q_reference);
+        // KDL::Frame T = robot.getFlange();
+        // double Roll, Pitch, Yaw;
+        // T.M.GetRPY(Roll, Pitch, Yaw);
+        // std::cout << "Roll, Pitch, Yaw     " << Roll << "\t" << Pitch << "\t" << Yaw << std::endl;
+
         KDL::JntArray q1(_joint_num);
         q1(0) = 0 * deg2rad;
         q1(1) = 0 * deg2rad;
-        q1(2) = 60 * deg2rad;
-        q1(3) = 15 * deg2rad;
-        q1(4) = 30 * deg2rad;
+        q1(2) = 30 * deg2rad;
+        q1(3) = 90 * deg2rad;
+        q1(4) = -45 * deg2rad;
         q1(5) = 0 * deg2rad;
-        q1(6) = 0 * deg2rad;
-
-        move_j(q2);
-
+        q1(6) = 45 * deg2rad;
         move_j(q1);
+        KDL::JntArray q2(4);
+        q2(0) = q1(2);
+        q2(1) = q1(3);
+        q2(2) = q1(4);
+        q2(3) = q1(6);
+        KDL::Frame T;
+        fk_solver.JntToCart(q2,T);
+        double Roll, Pitch, Yaw;
 
-        Point3D target(7, 0, 0, 0);
+        T.M.GetRPY(Roll, Pitch, Yaw);
+        std::cout << "Roll, Pitch, Yaw     " << Roll << "\t" << Pitch << "\t" << Yaw << std::endl;
+        sleep(2);
+
+
+
+
+        Point3D target(7.2, 0, -3.1415926, 0, 0);
 
         move_l(target);
 
-        Flange_Frame2Point3D();
+        // Point3D target(6, 0, -3.1415926, 0);
+
+        // move_l(target);
+
+        // Flange_Frame2Point3D();
         // std::cout<<robot.getJointPosition(2)<<"\t"<<robot.getJointPosition(3)<<"\t"<<robot.getJointPosition(4)<<"\t"<<robot.getJointPosition(6)<<"\n";
 
         // Point3D target_pose(7, 0, -3.1415926, 0);
@@ -401,6 +475,7 @@ namespace rocos
 
         //    move_l(target_pose);
 
+#pragma region // 读取文本数据并走servoj
         // std::ifstream file("vel[2].csv");
 
         // // 检查文件是否成功打开
@@ -437,6 +512,7 @@ namespace rocos
         // }
 
         // file.close();
+#pragma endregion
     }
 #pragma endregion
 

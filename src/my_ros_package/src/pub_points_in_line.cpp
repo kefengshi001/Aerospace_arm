@@ -227,21 +227,3 @@ int main(int argc, char *argv[])
 #pragma endregion
 
 
-
-/*
-int main()
-{
-    Point3D start = {1.0, 2.0, 3.0};
-    Point3D end = {4.0, 5.0, 6.0};
-    int numPoints = 1000;
-
-    std::vector<Point3D> discretizedPoints = discretizeLine(start, end, numPoints);
-
-    for (const Point3D &point : discretizedPoints)
-    {
-        std::cout << "x: " << point.x << " y: " << point.y << " z: " << point.z << std::endl;
-    }
-
-    return 0;
-}
-*/
