@@ -159,11 +159,12 @@ target_link_libraries(cube_pub
 add_executable(demo_test src/demo_test.cpp)
 target_link_libraries(demo_test   rocos::hardware rocos::kinematics rocos::drive rocos::protocol rocos::robot  Eigen3::Eigen gflags::gflags orocos-kdl kdl_parser ${catkin_LIBRARIES})
 
+add_executable(test_demo src/test_demo.cpp)
+target_link_libraries(test_demo   rocos::hardware rocos::kinematics rocos::drive rocos::protocol rocos::robot  Eigen3::Eigen gflags::gflags orocos-kdl kdl_parser ${catkin_LIBRARIES})
+
 
 add_executable(ppt src/ppt.cpp)
-target_link_libraries(ppt
-  ${catkin_LIBRARIES}
-)
+target_link_libraries(ppt   rocos::hardware rocos::kinematics rocos::drive rocos::protocol rocos::robot  Eigen3::Eigen gflags::gflags orocos-kdl kdl_parser ${catkin_LIBRARIES})
 
 # add_executable(test_demo src/test_demo.cpp)
 # target_link_libraries(test_demo   rocos::hardware rocos::kinematics rocos::drive rocos::protocol rocos::robot  Eigen3::Eigen gflags::gflags ${catkin_LIBRARIES})

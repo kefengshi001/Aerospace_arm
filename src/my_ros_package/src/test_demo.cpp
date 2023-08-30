@@ -32,7 +32,6 @@
 #include <string>
 #include <gflags/gflags.h>
 #include <kdl/chainiksolverpos_lma.hpp>
-#include <kdl/rotational_interpolation_sa.hpp>
 
 using namespace KDL;
 using namespace rocos;
@@ -138,7 +137,7 @@ namespace rocos
     }
 #pragma endregion
 
-#pragma region // 逆运动学求解器，限制住1、2、6关节求逆解
+#pragma region // 运动学求解器，限制住1、2、6关节求逆解
     KDL::Tree kdl_tree;
     KDL::Chain kdl_chain;
 
@@ -169,68 +168,278 @@ namespace rocos
         return ik_solver;
     }
 
+    KDL::ChainFkSolverPos_recursive Creat_FK_solver()
+    {
+
+        std::string fixed_urdf_file = "src/my_ros_package/config/modified-urdf-fixed.urdf";
+        if (!kdl_parser::treeFromFile(fixed_urdf_file, kdl_tree)) // 建立tree
+        {
+            // 加载URDF文件失败，处理错误
+            std::cout << "加载URDF文件失败" << std::endl;
+            exit(0);
+        }
+
+        // 提取机器人链信息
+        std::string base_link = "base_link"; // 设置基准链接
+        std::string end_link = "Link7";      // 设置终端链接
+
+        if (!kdl_tree.getChain(base_link, end_link, kdl_chain)) // 建立运动链
+        {
+            // 获取机器人链失败，处理错误
+            std::cout << "获取机器人链失败" << std::endl;
+            exit(0);
+        }
+
+        // 创建逆向运动学求解器
+        KDL::ChainFkSolverPos_recursive fk_solver(kdl_chain);
+        return fk_solver;
+    }
+
 #pragma endregion
 
-#pragma reigon
-    // 插值法
-    double dt = 0.001;
-    std::vector<KDL::JntArray> generateServojCommands(const Frame &start_pose, const Frame &end_pose)
-    {
-        KDL::ChainIkSolverPos_LMA ik_solver = Create_IK_Solver();
-        KDL::JntArray q_init(kdl_chain.getNrOfJoints());
-        KDL::JntArray solution(kdl_chain.getNrOfJoints());
-        KDL::JntArray target_solution(_joint_num);
+#pragma region // 离散空间中两点    pose_y_left.p:[   -0.644451,     3.55711, 1.84511e-05]      pose_y_right.p:[   -0.644451,     8.87911, 1.84511e-05]
 
-        // 获得机器人当前关节角并初始化q_init为当前机器人关节角
+    struct Point3D // 创建一个存放位姿的结构体，后期方便离散和move_l的输入
+    {
+        const double x = -0.644451;
+        double y, z, Roll, Pitch, Yaw;
+        // const double Pitch = 0;
+
+        Point3D() {} // 无参数构造函数
+
+        Point3D(double yVal, double zVal, double rollVal, double pitchVal, double YawVal)
+            : y(yVal), z(zVal), Roll(rollVal), Pitch(pitchVal), Yaw(YawVal)
+        {
+            // 在构造函数的初始化列表中完成非常量成员的赋值
+        }
+    };
+
+    double dt = 0.0001; // 离散线段的步长
+
+    // 将输入的Point3D的对象转化成KDL::Frame 的形式<辅助中间类函数>,用Frame来求逆解。
+    KDL::Frame Point3D2Frame(Point3D &pose)
+    {
+        KDL::Frame target_frame_pose;
+
+        target_frame_pose.p[0] = pose.x;
+        target_frame_pose.p[1] = pose.y;
+        target_frame_pose.p[2] = pose.z;
+        target_frame_pose.M = KDL::Rotation::RPY(pose.Roll, pose.Pitch, pose.Yaw);
+        return target_frame_pose;
+    }
+
+    // 将当前末端法兰转化成Point3D的对象作为离散线段的起点
+    Point3D Flange_Frame2Point3D()
+    {
+        KDL::Frame Flange_pose = robot.getFlange(); // 获取末端法兰盘位姿
+
+        //***********************打印法兰盘位姿对应关节角***************************************//
+
+        KDL::ChainIkSolverPos_LMA ik_solver = Create_IK_Solver(); // 创建逆运动学求解器
+        KDL::JntArray q_init(kdl_chain.getNrOfJoints());          // 注意kdl_chain.getNrOfJoints()放在创建逆运动学求解器后面，Create_IK_Solver()会给kdl_chain赋值，放前面则为空。
+        KDL::JntArray solution(kdl_chain.getNrOfJoints());
+
+        ik_solver.CartToJnt(q_init, Flange_pose, solution);
+
+        //*********测试法兰盘**************//
+        // std::cout<<"Flange_pose对应的关节角为："<<std::endl;
+        // for (int i = 0; i < 4; i++)
+        // {
+        //     std::cout << solution(i) << "\t";
+        // }
+        // std::cout << std::endl;
+
+        //**************将当前末端法兰盘位姿转化成Point3D的结构当做起始点用于去离散直线******************//
+        Point3D start;
+        // start.x = Flange_pose.p[0];
+        start.y = Flange_pose.p[1];
+        start.z = Flange_pose.p[2];
+        // double void_num; // 由于Pitch是const类型，不能修改其值，因此创建一个变量用于临时存放.GetRPY的值，void_num值无作用
+        Flange_pose.M.GetRPY(start.Roll, start.Pitch, start.Yaw);
+        // std::cout<<"start.Roll ="<<start.Roll<<"\t"<<"start.Pitch ="<<"\t"<<start.Pitch<<"\t"<<"start.Yaw = "<<start.Yaw<<"\n";
+        // std::cout<<"start.Roll ="<<start.Roll<<"\t"<<"void_num = "<<void_num<<"\t"<<"start.Yaw = "<<start.Yaw<<"\n";
+
+        return start;
+    }
+
+#pragma region //// RPY转化成 Eigen::Quaterniond类型的四元素,便于后续插值
+    Eigen::Quaterniond RPY2Quat(double roll, double pitch, double yaw)
+    {
+        // 将RPY转化成旋转矩阵
+        KDL::Rotation rotation = KDL::Rotation::RPY(roll, pitch, yaw);
+
+        // 将旋转矩阵转化成四元素<double类型>
+        double qx;
+        double qy;
+        double qz;
+        double qw;
+        rotation.GetQuaternion(qx, qy, qz, qw);
+        Eigen::Quaterniond V;
+        V.x() = qx;
+        V.y() = qy;
+        V.z() = qz;
+        V.w() = qw;
+        return V;
+    }
+#pragma endregion
+
+#pragma region ////将 Eigen::Quaterniond类型的四元素转化成旋转矩阵
+    KDL::Rotation Quaterniond2Rotation(Eigen::Quaterniond &quaternion)
+    {
+        KDL::Rotation quat2rot;
+        double qx;
+        double qy;
+        double qz;
+        double qw;
+
+        qx = quaternion.x();
+        qy = quaternion.y();
+        qz = quaternion.z();
+        qw = quaternion.w();
+        return quat2rot = KDL::Rotation::Quaternion(qx, qy, qz, qw);
+    }
+#pragma endregion
+
+    // -------------------------------------------------------------------------------
+    // 离散空间中两点构成的直线并将离散点转化成frame再逆运动学求解到JntArray存放在vector中
+    std::vector<KDL::JntArray> discretizeLine(const Point3D &start, const Point3D &end, double dt)
+    {
+
+        KDL::ChainIkSolverPos_LMA ik_solver = Create_IK_Solver(); // 创建逆运动学求解器
+        std::vector<KDL::JntArray> discretePoints;                // 创建<KDL::JntArray>类型容器用来存放关节角
+
+        // 1.将起点和终点的RPY值转化成Eigen::Quaterniond类型的四元素
+        // Eigen::Quaterniond start_quat(1.0, 0.0, 0.0, 0.0); // 假设单位四元数
+        // Eigen::Quaterniond end_quat(0.0, 1.0, 0.0, 0.0);   // 假设单位四元数
+        Eigen::Quaterniond start_quat = RPY2Quat(start.Roll, start.Pitch, start.Yaw);
+        Eigen::Quaterniond end_quat = RPY2Quat(end.Roll, end.Pitch, end.Yaw);
+
+        // 计算离散点个数
+        double distance = sqrt(pow(end.x - start.x, 2) + pow(end.y - start.y, 2) + pow(end.z - start.z, 2));
+        long long int numSteps = static_cast<int>(distance / dt);
+        std::cout << "numSteps = " << numSteps << std::endl;
+        // sleep(2);
+
+        // 计算每一项的步长
+        //  double stepX = (end.x - start.x) / numSteps;
+        double stepY = (end.y - start.y) / numSteps;
+        double stepZ = (end.z - start.z) / numSteps;
+        // 四元素的增量放置到循环里面
+
+        KDL::JntArray q_init(kdl_chain.getNrOfJoints()); // 四个元素
+        KDL::JntArray solution(kdl_chain.getNrOfJoints());
+        KDL::JntArray discrete_jointarray(_joint_num); // 七个元素
+
+        // 初始化q_init
         q_init(0) = robot.getJointPosition(2);
         q_init(1) = robot.getJointPosition(3);
         q_init(2) = robot.getJointPosition(4);
         q_init(3) = robot.getJointPosition(6);
 
-        // 计算离散点个数
-        double distance = sqrt(pow(end_pose.x - start_pose.x, 2) + pow(end_pose.y - start_pose.y, 2) + pow(end_pose.z - start_pose.z, 2));
-        long long int numSteps = static_cast<int>(distance / dt);
+        // long int count = 1;
 
-        // Interpolate between start and end poses
-        std::vector<KDL::JntArray> interpolated_solutions;
+        // //************************************************************************//
+        // std::ofstream csv_record("vel.csv");
 
-        // Vector start_pos = start_pose.p;
-        // Vector end_pos = end_pose.p;
-        // Rotation start_rot = start_pose.M;
-        // Rotation end_rot = end_pose.M;
+        // if (!csv_record.is_open())
+        // {
+        //     std::cout << "打开失败" << std::endl;
+        //     // flag_loop = false;
+        // }
 
-        Quaternion start_quat = start_pose.M.GetQuaternion();
-        Quaternion end_quat = end_pose.M.GetQuaternion();
-        Quaternion interpolated_quat;
-
-        Frame interpolated_pose;
+        // //**********************************************************************//
 
         for (int i = 0; i <= numSteps; ++i)
         {
-            double t = static_cast<double>(i) / numSteps;
-            interpolated_pose.p = start_pose.p * (1.0 - t) + end_pose.p * t;
-            // interpolated_pose.M = Rotation::Interpolate(start_pose.M, end_pose.M, t);
+            Point3D point;
+            double t = static_cast<double>(i) / numSteps; // 四元素增量
+            // 2.1 插值
+            //  point.x = start.x + stepX * i;
+            point.y = start.y + stepY * i;
+            point.z = start.z + stepZ * i;
+            Eigen::Quaterniond interpolated_orientation = start_quat.slerp(t, end_quat);
+            // 2.2 将四元素转化成KDL::Rotation 类型的旋转矩阵
+            KDL::Frame M_Frame;
+            M_Frame.M = Quaterniond2Rotation(interpolated_orientation);
+            // 2.3 将旋转矩阵和向量p合并成转换矩阵
+            M_Frame.p =KDL::Vector(point.x, point.y, point.z);
 
-            ik_solver.CartToJnt(q_init, interpolated_pose, solution);
-            target_solution = q_standard2q_target(solution);
+            // KDL::Frame mild_frame = Point3D2Frame(point); // 将Point3D转化为KDL::Frame
+            // KDL::JntArray mild_q;
 
-            robot.servoJ(target_solution);
-            interpolated_solutions.push_back(target_solution);
+            // std::cout<<"robot.getFlange().p = "<<robot.getFlange().p<<std::endl;
+            // std::cout<<"robot.getFlange().M = "<<robot.getFlange().M<<std::endl;
+
+            // std::cout<<"mild_frame.p = "<<mild_frame.p<<std::endl;
+            // std::cout<<"mild_frame.M = "<<mild_frame.M<<std::endl;
+
+            // if (count == 1) // 将当前位置关节角给q_init
+            // {
+            //     q_init(0) = robot.getJointPosition(2);
+            //     q_init(1) = robot.getJointPosition(3);
+            //     q_init(2) = robot.getJointPosition(4);
+            //     q_init(3) = robot.getJointPosition(6);
+            // }
+
+            // std::cout << "q_init(i)"<<"\t";
+            // for (int i = 0; i < 4; i++)
+            // {
+            //     std::cout << q_init(i) << "\t";
+            // }
+            // std::cout << std::endl;
+
+            ////************************************************************************************////
+            // 2.4 转换矩阵逆解成关节角
+            ik_solver.CartToJnt(q_init, M_Frame, solution);
+            ////************************************************************************************////
+
+            // std::cout << "solution(i)"<<"\t";
+            // for (int i = 0; i < 4; i++)
+            // {
+            //     std::cout << solution(i) << "\t";
+            // }
+            // std::cout << std::endl;
+
+            // sleep(10);
+            // 将solution中的四个关节角给  discrete_jointarray，后者直接用于move_j和servoj
+            discrete_jointarray(0) = 0;
+            discrete_jointarray(1) = 0;
+            discrete_jointarray(2) = solution(0);
+            discrete_jointarray(3) = solution(1);
+            discrete_jointarray(4) = solution(2);
+            discrete_jointarray(5) = 0;
+            discrete_jointarray(6) = solution(3);
+            // //*****************************************************************//
+            // csv_record << discrete_jointarray(2) << "\t" << discrete_jointarray(3) << "\t" << discrete_jointarray(4) << "\t" << discrete_jointarray(6) << "\t"
+            //            << "\n"
+            //            << std::flush;
+            // //*****************************************************************//
+
+            robot.servoJ(discrete_jointarray);
+            discretePoints.push_back(discrete_jointarray);
             q_init = solution;
+    
         }
-        return interpolated_solutions;
+
+        // //*****************************************************************//
+        // csv_record.close();
+        // //*****************************************************************//
+
+        return discretePoints;
     }
+    // 需要将frame转化成joint存放，后面走servoj
+    //  -----------------------------------------------------------------------
 #pragma endregion
 
 #pragma region // move_l实现    std::vector<Point3D> target_point;  <x y z roll pitch yaw>
 
-    void move_l(const Frame &target_pose) //
+    void move_l(Point3D target_point) //
     {
         // 获取当前末端位姿作为起点
-        KDL::Frame start_pose = robot.getFlange();
+        Point3D start = Flange_Frame2Point3D();
 
-        // std::vector<KDL::JntArray> discretePoints = discretizeLine(start, target_point, dt);
-        generateServojCommands(start_pose, target_pose);
+        std::vector<KDL::JntArray> discretePoints = discretizeLine(start, target_point, dt);
+
         // for (const auto &point : discretePoints)
         // {
         //     KDL::JntArray q_standard = q_standard2q_target(point);
@@ -247,39 +456,64 @@ namespace rocos
 
 #pragma endregion
 
+#pragma region // 显示当前位置关节角和坐标以及对应的RPY值
+    void show_joint_and_pose()
+    {
+        std::cout << "**********关节角及位置信息**********" << std::endl;
+        double Roll, Pitch, Yaw;
+        KDL::JntArray current_joint(7);
+        current_joint(0) = robot.getJointPosition(0);
+        current_joint(1) = robot.getJointPosition(1);
+        current_joint(2) = robot.getJointPosition(2);
+        current_joint(3) = robot.getJointPosition(3);
+        current_joint(4) = robot.getJointPosition(4);
+        current_joint(5) = robot.getJointPosition(5);
+        current_joint(6) = robot.getJointPosition(6);
+
+        std::cout << "current_joint: ";
+        for (size_t i = 0; i < current_joint.rows(); ++i)
+        {
+            std::cout << current_joint(i) << "\t";
+        }
+        std::cout << std::endl;
+
+        robot.getFlange().M.GetRPY(Roll, Pitch, Yaw);
+        std::cout << "getFlange().p: " << robot.getFlange().p << std::endl;
+        std::cout << "Roll, Pitch, Yaw : " << Roll << "\t" << Pitch << "\t" << Yaw << std::endl;
+        std::cout << "************************************" << std::endl;
+    }
+
+#pragma endregion
+
 #pragma region // 运动代码实现
     void run()
     {
-        KDL::JntArray q2(_joint_num);
         KDL::JntArray q1(_joint_num);
         q1(0) = 0 * deg2rad;
         q1(1) = 0 * deg2rad;
-        q1(2) = 60 * deg2rad;
-        q1(3) = 15 * deg2rad;
-        q1(4) = 30 * deg2rad;
+        q1(2) = 30 * deg2rad;
+        q1(3) = 90 * deg2rad;
+        q1(4) = -45 * deg2rad;
         q1(5) = 0 * deg2rad;
-        q1(6) = 0 * deg2rad;
-
-        move_j(q2);
-
+        q1(6) = 45 * deg2rad;
         move_j(q1);
+        show_joint_and_pose();
 
-        KDL::Frame start_pose = robot.getFlange();
-        KDL::Frame end_pose = start_pose;
-        end_pose.p.y(7.0);
-        end_pose.p.z(0.0);
+        Point3D target(7.2, 1, -3.1415926, 0, 0);
+        move_l(target);
+        show_joint_and_pose();
 
-        move_l(end_pose);
+        Point3D target_1(7.2, 0.2, -3.1415926, 0, 0);
+        move_l(target_1);
+        show_joint_and_pose();
 
-        // std::cout<<robot.getJointPosition(2)<<"\t"<<robot.getJointPosition(3)<<"\t"<<robot.getJointPosition(4)<<"\t"<<robot.getJointPosition(6)<<"\n";
+        Point3D target_2(7.2, 0, -3.1415926, 0, -1);
+        move_l(target_2);
+        show_joint_and_pose();
 
-        // Point3D target_pose(7, 0, -3.1415926, 0);
-        // // Point3D target_pose;
-        // std::cout << target_pose.x << "\t" << target_pose.y << "\t" << target_pose.z << "\t" << target_pose.Roll << "\t" << target_pose.Pitch << "\t" << target_pose.Yaw << "\t" << std::endl;
-
-        //    move_l(target_pose);
-
-        // std::ifstream file("vel[2].csv");
+#pragma region // 读取文本数据并走servoj
+               // std::ifstream file("vel.csv");
+               // KDL::JntArray q_list(_joint_num);
 
         // // 检查文件是否成功打开
         // if (!file.is_open())
@@ -307,14 +541,15 @@ namespace rocos
         //     // 在这里可以处理每行数据，row 是一个包含字段的字符串向量
         //     for (const auto &value : row)
         //     {
-        //         q1(2) = value;
-        //         robot.servoJ(q1);
+        //         q_list(2) = value;
+        //         robot.servoJ(q_list);
         //     }
 
         //     std::cout << std::endl;
         // }
 
         // file.close();
+#pragma endregion
     }
 #pragma endregion
 

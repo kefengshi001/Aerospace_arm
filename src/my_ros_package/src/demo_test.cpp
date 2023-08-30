@@ -425,7 +425,7 @@ namespace rocos
         robot.getFlange().M.GetRPY(Roll, Pitch, Yaw);
         std::cout << "getFlange().p: " << robot.getFlange().p << std::endl;
         std::cout << "Roll, Pitch, Yaw : " << Roll << "\t" << Pitch << "\t" << Yaw << std::endl;
-        std::cout << "**********************************" << std::endl;
+        std::cout << "************************************" << std::endl;
     }
 
 #pragma endregion
@@ -452,7 +452,7 @@ namespace rocos
         move_l(target_1);
         show_joint_and_pose();
 
-        Point3D target_2(7.2, 0, 3.1415926, 0, -1);
+        Point3D target_2(7.2, 0, -3.1415926, 0, -1);
         move_l(target_2);
         show_joint_and_pose();
 
