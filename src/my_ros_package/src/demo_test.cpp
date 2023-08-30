@@ -254,7 +254,7 @@ namespace rocos
         // start.x = Flange_pose.p[0];
         start.y = Flange_pose.p[1];
         start.z = Flange_pose.p[2];
-        double void_num; // 由于Pitch是const类型，不能修改其值，因此创建一个变量用于临时存放.GetRPY的值，void_num值无作用
+        // double void_num; // 由于Pitch是const类型，不能修改其值，因此创建一个变量用于临时存放.GetRPY的值，void_num值无作用
         Flange_pose.M.GetRPY(start.Roll, start.Pitch, start.Yaw);
         // std::cout<<"start.Roll ="<<start.Roll<<"\t"<<"start.Pitch ="<<"\t"<<start.Pitch<<"\t"<<"start.Yaw = "<<start.Yaw<<"\n";
         // std::cout<<"start.Roll ="<<start.Roll<<"\t"<<"void_num = "<<void_num<<"\t"<<"start.Yaw = "<<start.Yaw<<"\n";
@@ -273,6 +273,7 @@ namespace rocos
         double distance = sqrt(pow(end.x - start.x, 2) + pow(end.y - start.y, 2) + pow(end.z - start.z, 2));
         long long int numSteps = static_cast<int>(distance / dt);
         std::cout << "numSteps = " << numSteps << std::endl;
+        sleep(2);
 
         // 计算每一项的步长
         //  double stepX = (end.x - start.x) / numSteps;
@@ -291,11 +292,11 @@ namespace rocos
         //************************************************************************//
         std::ofstream csv_record("vel.csv");
 
-            if (!csv_record.is_open())
-            {
-                std::cout << "打开失败" << std::endl;
-                // flag_loop = false;
-            }
+        if (!csv_record.is_open())
+        {
+            std::cout << "打开失败" << std::endl;
+            // flag_loop = false;
+        }
 
         //**********************************************************************//
 
@@ -354,10 +355,12 @@ namespace rocos
             discrete_jointarray(5) = 0;
             discrete_jointarray(6) = solution(3);
             //*****************************************************************//
-            csv_record <<  discrete_jointarray(2) << "\t"<<discrete_jointarray(3) << "\t"<<discrete_jointarray(4) << "\t"<<discrete_jointarray(6) << "\t"<<"\n"<<std::flush;
+            csv_record << discrete_jointarray(2) << "\t" << discrete_jointarray(3) << "\t" << discrete_jointarray(4) << "\t" << discrete_jointarray(6) << "\t"
+                       << "\n"
+                       << std::flush;
             //*****************************************************************//
 
-            // robot.servoJ(discrete_jointarray);
+            robot.servoJ(discrete_jointarray);
             discretePoints.push_back(discrete_jointarray);
             q_init = solution;
             count++;
@@ -398,41 +401,38 @@ namespace rocos
 
 #pragma endregion
 
+#pragma region // 显示当前位置关节角和坐标以及对应的RPY值
+    void show_joint_and_pose()
+    {
+        std::cout << "**********关节角及位置信息**********" << std::endl;
+        double Roll, Pitch, Yaw;
+        KDL::JntArray current_joint(7);
+        current_joint(0) = robot.getJointPosition(0);
+        current_joint(1) = robot.getJointPosition(1);
+        current_joint(2) = robot.getJointPosition(2);
+        current_joint(3) = robot.getJointPosition(3);
+        current_joint(4) = robot.getJointPosition(4);
+        current_joint(5) = robot.getJointPosition(5);
+        current_joint(6) = robot.getJointPosition(6);
+
+        std::cout << "current_joint: ";
+        for (size_t i = 0; i < current_joint.rows(); ++i)
+        {
+            std::cout << current_joint(i) << "\t";
+        }
+        std::cout << std::endl;
+
+        robot.getFlange().M.GetRPY(Roll, Pitch, Yaw);
+        std::cout << "getFlange().p: " << robot.getFlange().p << std::endl;
+        std::cout << "Roll, Pitch, Yaw : " << Roll << "\t" << Pitch << "\t" << Yaw << std::endl;
+        std::cout << "**********************************" << std::endl;
+    }
+
+#pragma endregion
+
 #pragma region // 运动代码实现
     void run()
     {
-        auto fk_solver = Creat_FK_solver();
-        // KDL::JntArray q_init(_joint_num);
-        // KDL::JntArray q_reference(_joint_num);
-        // q_reference(0) = 0 * deg2rad;
-        // q_reference(1) = 0 * deg2rad;
-        // q_reference(2) = 45 * deg2rad;
-        // q_reference(3) = 90 * deg2rad;
-        // q_reference(4) = -45 * deg2rad;
-        // q_reference(5) = 0 * deg2rad;
-        // q_reference(6) = 0 * deg2rad;
-
-        // KDL::JntArray q_target_reference(4);
-        // q_target_reference(0) = q_reference(2);
-        // q_target_reference(1) = q_reference(3);
-        // q_target_reference(2) = q_reference(4);
-        // q_target_reference(3) = q_reference(6);
-
-        // KDL::Frame q_target_frame_reference;
-        // std::cout << "--------------------------------" << std::endl;
-        // // std::cout<<q_target_frame_reference.q.rows()<<"\t"<<q_target_frame_reference.qdot.rows()<<std::endl;
-        // int statu = fk_solver.JntToCart(q_target_reference, q_target_frame_reference); // 将q_reference转化成笛卡尔空间坐标
-        // std::cout << "正运动学解算statu：" << statu << std::endl;
-        // std::cout << "q_target_frame_reference.p: " << q_target_frame_reference.p << std::endl;
-        // KDL::JntArray q2(_joint_num);
-        // move_j(q2);
-
-        // move_j(q_reference);
-        // KDL::Frame T = robot.getFlange();
-        // double Roll, Pitch, Yaw;
-        // T.M.GetRPY(Roll, Pitch, Yaw);
-        // std::cout << "Roll, Pitch, Yaw     " << Roll << "\t" << Pitch << "\t" << Yaw << std::endl;
-
         KDL::JntArray q1(_joint_num);
         q1(0) = 0 * deg2rad;
         q1(1) = 0 * deg2rad;
@@ -442,41 +442,23 @@ namespace rocos
         q1(5) = 0 * deg2rad;
         q1(6) = 45 * deg2rad;
         move_j(q1);
-        KDL::JntArray q2(4);
-        q2(0) = q1(2);
-        q2(1) = q1(3);
-        q2(2) = q1(4);
-        q2(3) = q1(6);
-        KDL::Frame T;
-        fk_solver.JntToCart(q2,T);
-        double Roll, Pitch, Yaw;
+        show_joint_and_pose();
 
-        T.M.GetRPY(Roll, Pitch, Yaw);
-        std::cout << "Roll, Pitch, Yaw     " << Roll << "\t" << Pitch << "\t" << Yaw << std::endl;
-        sleep(2);
-
-
-
-
-        Point3D target(7.2, 0, -3.1415926, 0, 0);
-
+        Point3D target(7.2, 1, -3.1415926, 0, 0);
         move_l(target);
+        show_joint_and_pose();
 
-        // Point3D target(6, 0, -3.1415926, 0);
+        Point3D target_1(7.2, 0.2, -3.1415926, 0, 0);
+        move_l(target_1);
+        show_joint_and_pose();
 
-        // move_l(target);
-
-        // Flange_Frame2Point3D();
-        // std::cout<<robot.getJointPosition(2)<<"\t"<<robot.getJointPosition(3)<<"\t"<<robot.getJointPosition(4)<<"\t"<<robot.getJointPosition(6)<<"\n";
-
-        // Point3D target_pose(7, 0, -3.1415926, 0);
-        // // Point3D target_pose;
-        // std::cout << target_pose.x << "\t" << target_pose.y << "\t" << target_pose.z << "\t" << target_pose.Roll << "\t" << target_pose.Pitch << "\t" << target_pose.Yaw << "\t" << std::endl;
-
-        //    move_l(target_pose);
+        Point3D target_2(7.2, 0, 3.1415926, 0, -1);
+        move_l(target_2);
+        show_joint_and_pose();
 
 #pragma region // 读取文本数据并走servoj
-        // std::ifstream file("vel[2].csv");
+               // std::ifstream file("vel.csv");
+               // KDL::JntArray q_list(_joint_num);
 
         // // 检查文件是否成功打开
         // if (!file.is_open())
@@ -504,8 +486,8 @@ namespace rocos
         //     // 在这里可以处理每行数据，row 是一个包含字段的字符串向量
         //     for (const auto &value : row)
         //     {
-        //         q1(2) = value;
-        //         robot.servoJ(q1);
+        //         q_list(2) = value;
+        //         robot.servoJ(q_list);
         //     }
 
         //     std::cout << std::endl;
