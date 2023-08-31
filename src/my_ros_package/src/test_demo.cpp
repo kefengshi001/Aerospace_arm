@@ -32,6 +32,8 @@
 #include <string>
 #include <gflags/gflags.h>
 #include <kdl/chainiksolverpos_lma.hpp>
+#include <nav_msgs/Path.h>
+#include <geometry_msgs/PoseStamped.h>
 
 using namespace KDL;
 using namespace rocos;
@@ -73,14 +75,65 @@ namespace rocos
      * @param delim 切割符
      */
 
+#pragma region // 处理路劲消息
+    void publishpath(ros::NodeHandle &nh)
+    {
+        std::cout << "-----------111111------------------" << std::endl;
+
+        ros::Publisher pub_path = nh.advertise<nav_msgs::Path>("/path_topic_path", 100);
+        ros::Rate loop_rate(100); // 设置发布频率
+
+
+        nav_msgs::Path path;
+        geometry_msgs::PoseStamped pose;
+        path.header.frame_id = "base_link";
+        std::vector<geometry_msgs::PoseStamped> points;
+        while (isRuning)
+        {
+            if (signal(SIGINT, signalHandler) == SIG_ERR)
+            {
+                std::cout << "\033[1;31m"
+                          << "Can not catch SIGINT"
+                          << "\033[0m" << std::endl;
+            }
+            // 路劲相关信息
+
+            // 处理路径信息
+            path.header.frame_id = "base_link";
+            pose.pose.position.x = robot.getFlange().p[0];
+            pose.pose.position.y = robot.getFlange().p[1];
+            pose.pose.position.z = robot.getFlange().p[2];
+            pose.pose.orientation.w = 1.0;
+            points.push_back(pose);
+
+            path.poses = points;
+
+            std::cout << "curent pose: " << pose.pose.position.x << "\t" << pose.pose.position.y << "\t" << pose.pose.position.z << std::endl;
+            path.header.stamp = ros::Time::now();
+            pub_path.publish(path);
+
+            loop_rate.sleep();
+
+            // // 创建一个假的nav_msgs::Path消息
+            // nav_msgs::Path originalPath;
+            // // 填充原始路径消息，这里只是示例，你需要根据实际情况来填充消息
+
+            // // 调用回调函数进行处理
+            // pathCallback(boost::make_shared<const nav_msgs::Path>(originalPath));
+        }
+    }
+
+#pragma endregion
+
 #pragma region // 用来发布节点消息
     void Robot::test()
     {
 
-        ros::NodeHandle nh;
-        ros::Publisher publisher = nh.advertise<sensor_msgs::JointState>("joint_states", 10);
+        ros::NodeHandle nh; // 全局处理，便于后面现实路径函数调用
 
-        ros::Rate loop_rate(100); // 1 Hz publishing rate
+        ros::Publisher pub_joint = nh.advertise<sensor_msgs::JointState>("joint_states", 10);
+
+        ros::Rate loop_rate(100); // 设置发布频率
 
         while (isRuning)
         {
@@ -91,21 +144,25 @@ namespace rocos
                           << "\033[0m" << std::endl;
             }
 
+            // 关节相关信息
             sensor_msgs::JointState joint_state;
-
-            // Set joint names
             joint_state.name = {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"};
-
-            // Set joint positions
             joint_state.position = {getJointPosition(0), getJointPosition(1), getJointPosition(2),
                                     getJointPosition(3), getJointPosition(4), getJointPosition(5), getJointPosition(6)};
+
+            // 路径相关信息在定时器调用函数处理
 
             // Set header timestamp
             joint_state.header.stamp = ros::Time::now();
 
-            publisher.publish(joint_state);
+            pub_joint.publish(joint_state);
+            // pub_path.publish(path);
+
+            // ros::Timer publisher_timer;
+            // publisher_timer = nh.createTimer(ros::Duration(0.1), publisherCallback);
 
             loop_rate.sleep();
+            // ros::spin();
         }
 
         // ros::shutdown();
@@ -197,8 +254,7 @@ namespace rocos
 
 #pragma endregion
 
-#pragma region // 离散空间中两点    pose_y_left.p:[   -0.644451,     3.55711, 1.84511e-05]      pose_y_right.p:[   -0.644451,     8.87911, 1.84511e-05]
-
+#pragma region     // 创建一个结构体用来存放x,y,x,R,P,Y
     struct Point3D // 创建一个存放位姿的结构体，后期方便离散和move_l的输入
     {
         const double x = -0.644451;
@@ -213,10 +269,9 @@ namespace rocos
             // 在构造函数的初始化列表中完成非常量成员的赋值
         }
     };
+#pragma endregion
 
-    double dt = 0.0001; // 离散线段的步长
-
-    // 将输入的Point3D的对象转化成KDL::Frame 的形式<辅助中间类函数>,用Frame来求逆解。
+#pragma region // 将输入的Point3D的对象转化成KDL::Frame 的形式<辅助中间类函数>,用Frame来求逆解。
     KDL::Frame Point3D2Frame(Point3D &pose)
     {
         KDL::Frame target_frame_pose;
@@ -227,8 +282,9 @@ namespace rocos
         target_frame_pose.M = KDL::Rotation::RPY(pose.Roll, pose.Pitch, pose.Yaw);
         return target_frame_pose;
     }
+#pragma endregion
 
-    // 将当前末端法兰转化成Point3D的对象作为离散线段的起点
+#pragma region // 将当前末端法兰转化成Point3D的对象作为离散线段的起点
     Point3D Flange_Frame2Point3D()
     {
         KDL::Frame Flange_pose = robot.getFlange(); // 获取末端法兰盘位姿
@@ -254,13 +310,12 @@ namespace rocos
         // start.x = Flange_pose.p[0];
         start.y = Flange_pose.p[1];
         start.z = Flange_pose.p[2];
-        // double void_num; // 由于Pitch是const类型，不能修改其值，因此创建一个变量用于临时存放.GetRPY的值，void_num值无作用
         Flange_pose.M.GetRPY(start.Roll, start.Pitch, start.Yaw);
         // std::cout<<"start.Roll ="<<start.Roll<<"\t"<<"start.Pitch ="<<"\t"<<start.Pitch<<"\t"<<"start.Yaw = "<<start.Yaw<<"\n";
-        // std::cout<<"start.Roll ="<<start.Roll<<"\t"<<"void_num = "<<void_num<<"\t"<<"start.Yaw = "<<start.Yaw<<"\n";
 
         return start;
     }
+#pragma endregion
 
 #pragma region //// RPY转化成 Eigen::Quaterniond类型的四元素,便于后续插值
     Eigen::Quaterniond RPY2Quat(double roll, double pitch, double yaw)
@@ -300,8 +355,9 @@ namespace rocos
     }
 #pragma endregion
 
-    // -------------------------------------------------------------------------------
-    // 离散空间中两点构成的直线并将离散点转化成frame再逆运动学求解到JntArray存放在vector中
+#pragma region          // 空间线段离散插值
+    double dt = 0.0001; // 离散线段的步长
+
     std::vector<KDL::JntArray> discretizeLine(const Point3D &start, const Point3D &end, double dt)
     {
 
@@ -362,45 +418,13 @@ namespace rocos
             KDL::Frame M_Frame;
             M_Frame.M = Quaterniond2Rotation(interpolated_orientation);
             // 2.3 将旋转矩阵和向量p合并成转换矩阵
-            M_Frame.p =KDL::Vector(point.x, point.y, point.z);
-
-            // KDL::Frame mild_frame = Point3D2Frame(point); // 将Point3D转化为KDL::Frame
-            // KDL::JntArray mild_q;
-
-            // std::cout<<"robot.getFlange().p = "<<robot.getFlange().p<<std::endl;
-            // std::cout<<"robot.getFlange().M = "<<robot.getFlange().M<<std::endl;
-
-            // std::cout<<"mild_frame.p = "<<mild_frame.p<<std::endl;
-            // std::cout<<"mild_frame.M = "<<mild_frame.M<<std::endl;
-
-            // if (count == 1) // 将当前位置关节角给q_init
-            // {
-            //     q_init(0) = robot.getJointPosition(2);
-            //     q_init(1) = robot.getJointPosition(3);
-            //     q_init(2) = robot.getJointPosition(4);
-            //     q_init(3) = robot.getJointPosition(6);
-            // }
-
-            // std::cout << "q_init(i)"<<"\t";
-            // for (int i = 0; i < 4; i++)
-            // {
-            //     std::cout << q_init(i) << "\t";
-            // }
-            // std::cout << std::endl;
+            M_Frame.p = KDL::Vector(point.x, point.y, point.z);
 
             ////************************************************************************************////
             // 2.4 转换矩阵逆解成关节角
             ik_solver.CartToJnt(q_init, M_Frame, solution);
             ////************************************************************************************////
 
-            // std::cout << "solution(i)"<<"\t";
-            // for (int i = 0; i < 4; i++)
-            // {
-            //     std::cout << solution(i) << "\t";
-            // }
-            // std::cout << std::endl;
-
-            // sleep(10);
             // 将solution中的四个关节角给  discrete_jointarray，后者直接用于move_j和servoj
             discrete_jointarray(0) = 0;
             discrete_jointarray(1) = 0;
@@ -418,7 +442,6 @@ namespace rocos
             robot.servoJ(discrete_jointarray);
             discretePoints.push_back(discrete_jointarray);
             q_init = solution;
-    
         }
 
         // //*****************************************************************//
@@ -499,7 +522,7 @@ namespace rocos
         move_j(q1);
         show_joint_and_pose();
 
-        Point3D target(7.2, 1, -3.1415926, 0, 0);
+        Point3D target(7.2, 1, -3.1415926, 1, 1);
         move_l(target);
         show_joint_and_pose();
 
@@ -573,7 +596,10 @@ int main(int argc, char *argv[])
 
     auto robotService = RobotServiceImpl::getInstance(&robot);
 
-    ros::init(argc, argv, "joint_state_publisher");
+    // 初始化ROS节点
+    ros::init(argc, argv, "joint_state_publisher"); // 发布关节信息
+    ros::init(argc, argv, "path_publisher");        // 路径显示
+    ros::NodeHandle nh;                             // 全局处理，便于后面现实路径函数调用
 
     //------------------------wait----------------------------------
     std::thread thread_test{&rocos::Robot::test, &robot}; // 将一个类的成员函数作为线程函数的入口，
@@ -582,12 +608,13 @@ int main(int argc, char *argv[])
 
     //**** std::thread myThread(&rocos::move_j, std::ref(robot));   ****//往函数里面传参
     std::thread Thread_run(&rocos::run);
+    std::thread Thread_path(&rocos::publishpath, std::ref(nh));
 
     //------------------------wait----------------------------------
     // robotService->runServer();
 
     thread_test.join();
     Thread_run.join();
-
+    Thread_path.join();
     return 0;
 }
