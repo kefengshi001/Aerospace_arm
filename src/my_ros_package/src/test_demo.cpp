@@ -34,6 +34,8 @@
 #include <kdl/chainiksolverpos_lma.hpp>
 #include <nav_msgs/Path.h>
 #include <geometry_msgs/PoseStamped.h>
+// #include <kdl/models/models.hpp>
+// src/my_ros_package/3rdparty/kdl/models/models.hpp
 
 using namespace KDL;
 using namespace rocos;
@@ -78,11 +80,10 @@ namespace rocos
 #pragma region // 处理路劲消息
     void publishpath(ros::NodeHandle &nh)
     {
-        std::cout << "-----------111111------------------" << std::endl;
+        // std::cout << "-----------111111------------------" << std::endl;
 
-        ros::Publisher pub_path = nh.advertise<nav_msgs::Path>("/path_topic_path", 100);
-        ros::Rate loop_rate(100); // 设置发布频率
-
+        ros::Publisher pub_path = nh.advertise<nav_msgs::Path>("/path_topic_path", 1);
+        ros::Rate loop_rate(2); // 设置发布频率
 
         nav_msgs::Path path;
         geometry_msgs::PoseStamped pose;
@@ -187,7 +188,7 @@ namespace rocos
 #pragma endregion
 
 #pragma region // move_j实现     KDL::JntArray q
-    void move_j(JntArray q, double speed = 0.8, double acceleration = 1.4)
+    void move_j(JntArray q, double speed = 0.1, double acceleration = 1.4)
     {
         JntArray q_target = q_standard2q_target(q);
         robot.MoveJ(q_target, speed, acceleration, 0, 0, false);
@@ -522,21 +523,26 @@ namespace rocos
         move_j(q1);
         show_joint_and_pose();
 
+        ////*********通过servoJ实现走直线*************////
         Point3D target(7.2, 1, -3.1415926, 1, 1);
         move_l(target);
         show_joint_and_pose();
 
-        Point3D target_1(7.2, 0.2, -3.1415926, 0, 0);
+        Point3D target_1(7.2, 0.5, -3.1415926, 0, 1);
         move_l(target_1);
         show_joint_and_pose();
 
-        Point3D target_2(7.2, 0, -3.1415926, 0, -1);
+        Point3D target_2(7.2, 0, -3.1415926, 0, 0);
         move_l(target_2);
         show_joint_and_pose();
+        ////**************************************////
+
+
+     
 
 #pragma region // 读取文本数据并走servoj
-               // std::ifstream file("vel.csv");
-               // KDL::JntArray q_list(_joint_num);
+        // std::ifstream file("vel.csv");
+        // KDL::JntArray q_list(_joint_num);
 
         // // 检查文件是否成功打开
         // if (!file.is_open())

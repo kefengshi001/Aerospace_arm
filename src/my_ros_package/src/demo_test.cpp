@@ -32,6 +32,8 @@
 #include <string>
 #include <gflags/gflags.h>
 #include <kdl/chainiksolverpos_lma.hpp>
+#include <nav_msgs/Path.h>
+#include <geometry_msgs/PoseStamped.h>
 
 using namespace KDL;
 using namespace rocos;
@@ -72,6 +74,53 @@ namespace rocos
      * @param tokens 结果存储
      * @param delim 切割符
      */
+#pragma region // 处理路劲消息
+    void publishpath(ros::NodeHandle &nh)
+    {
+        // std::cout << "-----------111111------------------" << std::endl;
+
+        ros::Publisher pub_path = nh.advertise<nav_msgs::Path>("/path_topic_path", 1);
+        ros::Rate loop_rate(2); // 设置发布频率
+
+        nav_msgs::Path path;
+        geometry_msgs::PoseStamped pose;
+        path.header.frame_id = "base_link";
+        std::vector<geometry_msgs::PoseStamped> points;
+        while (isRuning)
+        {
+            if (signal(SIGINT, signalHandler) == SIG_ERR)
+            {
+                std::cout << "\033[1;31m"
+                          << "Can not catch SIGINT"
+                          << "\033[0m" << std::endl;
+            }
+            // 路劲相关信息
+
+            // 处理路径信息
+            path.header.frame_id = "base_link";
+            pose.pose.position.x = robot.getFlange().p[0];
+            pose.pose.position.y = robot.getFlange().p[1];
+            pose.pose.position.z = robot.getFlange().p[2];
+            pose.pose.orientation.w = 1.0;
+            points.push_back(pose);
+
+            path.poses = points;
+
+            std::cout << "curent pose: " << pose.pose.position.x << "\t" << pose.pose.position.y << "\t" << pose.pose.position.z << std::endl;
+            path.header.stamp = ros::Time::now();
+            pub_path.publish(path);
+
+            loop_rate.sleep();
+
+            // // 创建一个假的nav_msgs::Path消息
+            // nav_msgs::Path originalPath;
+            // // 填充原始路径消息，这里只是示例，你需要根据实际情况来填充消息
+
+            // // 调用回调函数进行处理
+            // pathCallback(boost::make_shared<const nav_msgs::Path>(originalPath));
+        }
+    }
+#pragma endregion
 
 #pragma region // 用来发布节点消息
     void Robot::test()
@@ -130,7 +179,7 @@ namespace rocos
 #pragma endregion
 
 #pragma region // move_j实现     KDL::JntArray q
-    void move_j(JntArray q, double speed = 0.8, double acceleration = 1.4)
+    void move_j(JntArray q, double speed = 0.1, double acceleration = 1.4)
     {
         JntArray q_target = q_standard2q_target(q);
         robot.MoveJ(q_target, speed, acceleration, 0, 0, false);
@@ -444,15 +493,15 @@ namespace rocos
         move_j(q1);
         show_joint_and_pose();
 
-        Point3D target(7.2, 1, -3.1415926, 0, 0);
+        Point3D target(7.2, 1, -3.1415926, 1, 1);
         move_l(target);
         show_joint_and_pose();
 
-        Point3D target_1(7.2, 0.2, -3.1415926, 0, 0);
+        Point3D target_1(7.2, 0.5, -3.1415926, 0, 1);
         move_l(target_1);
         show_joint_and_pose();
 
-        Point3D target_2(7.2, 0, -3.1415926, 0, -1);
+        Point3D target_2(7.2, 0, -3.1415926, 0, 0);
         move_l(target_2);
         show_joint_and_pose();
 
@@ -518,7 +567,10 @@ int main(int argc, char *argv[])
 
     auto robotService = RobotServiceImpl::getInstance(&robot);
 
-    ros::init(argc, argv, "joint_state_publisher");
+   // 初始化ROS节点
+    ros::init(argc, argv, "joint_state_publisher"); // 发布关节信息
+    ros::init(argc, argv, "path_publisher");        // 路径显示
+    ros::NodeHandle nh;                             // 全局处理，便于后面现实路径函数调用
 
     //------------------------wait----------------------------------
     std::thread thread_test{&rocos::Robot::test, &robot}; // 将一个类的成员函数作为线程函数的入口，
@@ -527,12 +579,14 @@ int main(int argc, char *argv[])
 
     //**** std::thread myThread(&rocos::move_j, std::ref(robot));   ****//往函数里面传参
     std::thread Thread_run(&rocos::run);
+    std::thread Thread_path(&rocos::publishpath, std::ref(nh));
 
     //------------------------wait----------------------------------
     // robotService->runServer();
 
     thread_test.join();
     Thread_run.join();
+    Thread_path.join();
 
     return 0;
 }
